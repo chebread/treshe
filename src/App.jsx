@@ -1,8 +1,10 @@
 import Router from 'components/Router';
 import { RecoilRoot } from 'recoil';
 import { Toaster } from 'react-hot-toast';
+
 const App = () => {
-  return (
+  const isGeolocation = 'geolocation' in navigator;
+  return isGeolocation ? (
     <RecoilRoot>
       <Toaster
         position="bottom-center"
@@ -12,6 +14,8 @@ const App = () => {
       />
       <Router />
     </RecoilRoot>
+  ) : (
+    <h1>Not approching geolocation</h1>
   );
 };
 

@@ -4,8 +4,8 @@ const getCurrentLocation = async () => {
   });
   const crd = data.coords;
   const lat = crd.latitude;
-  const long = crd.longitude;
-  return { lat: lat, long: long };
+  const lng = crd.longitude;
+  return { lat: lat, lng: lng };
 };
 
 export default getCurrentLocation;

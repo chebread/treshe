@@ -4,12 +4,11 @@ import { auth, onAuthStateChanged } from 'components/auth';
 import Auth from 'routes/Auth';
 import { userDataState } from 'components/state';
 import { useSetRecoilState } from 'recoil';
-import pushPosData from 'components/pushPosData';
 
 const App = () => {
   const isGeolocation = 'geolocation' in navigator;
-  const [init, setInit] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [init, setInit] = useState(false); // default : false
+  const [isLoggedIn, setIsLoggedIn] = useState(false); // default : false
   const setUserData = useSetRecoilState(userDataState);
 
   useEffect(() => {

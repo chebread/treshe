@@ -1,21 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import Maps from 'components/Maps';
-import { useMap, Source, Layer } from 'react-map-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
-import getGeolocation from 'components/getGeolocation';
-import pushPosData from 'components/pushPosData';
+import { useMap, Source, Layer, Marker, GeolocateControl } from 'react-map-gl';
 import { useRecoilValue } from 'recoil';
 import { userDataState } from 'components/state';
+import Maps from 'components/Maps';
+import pushData from 'components/pushData';
 import toast from 'react-hot-toast';
-import useGeolocation from 'react-hook-geolocation';
-import loadPosDatas from 'components/loadPosDatas';
+import { db, collection, query, onSnapshot } from 'components/firestore';
 
 const Home = () => {
   const mapRef = useMap();
-  const geolocation = useGeolocation();
   const userData = useRecoilValue(userDataState);
-  const [markerDatas, setMarkerDatas] = useState({});
+  const [currentPosition, setCurrentPosition] = useState({
+    lng: null,
+    lat: null,
+  });
+  const [geolocationAvailable, setGeolocationAvailable] = useState(false);
+  const [datas, setDatas] = useState({}); // 로드한 위치 정보를 답는 geojson 저장소이다
   const layerStyle = {
     id: 'point',
     type: 'circle',
@@ -24,62 +25,101 @@ const Home = () => {
       'circle-color': '#007cbf',
     },
   };
-  const [currentPosition, setCurrentPosition] = useState({
-    lng: null,
-    lat: null,
-  });
 
   useEffect(() => {
-    // 현재 위치가 변경될때 마다 마커를 생성하며 포커스함, 마커는 계속적으로 리 로드됨
-    const { longitude, latitude } = geolocation;
-    const { lng, lat } = currentPosition;
-    const isPosDifferent = longitude != lng && latitude != lat; // 기존에 저장된 위치와 달라야 새로운 위치를 currentPosition에 저장함
-    if (isPosDifferent) {
-      // geolocation의 현재 위치가 기존에서 변할때만 currentPosition을 재정의함
-      const newCurrentPosition = {
-        lng: longitude,
-        lat: latitude,
-      };
-      setCurrentPosition({
-        ...newCurrentPosition,
+    // 위치정보를 db에서 실시간으로 받아서 지도에 변동시나 처음에 로드한다
+    const markDatas = async () => {
+      // 마커 표시기
+      const q = query(collection(db, 'markers'));
+      onSnapshot(q, querySnapshot => {
+        const datas = []; // [{ geojson: { ... }}, { geojson: { .... }}]
+        querySnapshot.forEach(doc => {
+          datas.push(doc.data());
+        });
+        const sortDatas = [];
+        datas.map(a => {
+          sortDatas.push(a.geojson);
+        });
+        console.log('set datas');
+        setDatas({
+          type: 'FeatureCollection',
+          features: [...sortDatas],
+        });
       });
-    }
-  }, [geolocation]);
-
-  const onClickCurrentPosition = () => {
-    // 그냥 현재 위치로 포커스함
-    console.log('현재 위치로 포커스 함');
-    const { lng, lat } = currentPosition;
-    mapRef.current.flyTo({
-      center: [lng, lat],
-      zoom: 15,
-      duration: 2000,
-    });
-  };
-  const onClickAdd = async () => {
-    // mapRef.current.flyTo({
-    //   center: [0, 0],
+    };
+    markDatas();
+  }, []);
+  const onClickMap = e => {
+    // const feature = e.features[0];
+    // const clusterId = feature.properties.cluster_id;
+    // const mapboxSource = mapRef.current.getSource('datas');
+    // mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
+    //   if (err) {
+    //     return;
+    //   }
+    //   mapRef.current.flyTo({
+    //     center: feature.geometry.coordinates,
+    //     zoom,
+    //     duration: 500,
+    //   });
     // });
+  };
+  const onGeolocate = geolocation => {
     const {
       coords: { longitude, latitude },
-    } = await getGeolocation(); // 현재위치를 받아옴
-    const position = {
+    } = geolocation;
+    const newCurrentPosition = {
       lng: longitude,
       lat: latitude,
     };
-    await pushPosData({ position, userData });
+    setCurrentPosition({
+      ...newCurrentPosition,
+    }); // 위치 변동시 현재위치를 재정의함
+    if (!geolocationAvailable) {
+      // 위치를 사용할 수 있음을 전달함
+      setGeolocationAvailable(true);
+    }
+  };
+  const onClickAdd = async () => {
+    // 사용자의 현재위치를 db에 저장한다
+    const { lng, lat } = currentPosition;
+    const position = {
+      lng: lng,
+      lat: lat,
+    };
+    await pushData({ position, userData });
     toast.success('Current location added');
   };
-
   return (
     // (5): 또한, geolocation 기능은 내가 ref를 어떻게 고치든가 아니면 그냥 기존에꺼를 쓰되, 디자인을 수정하기.
     <FullScreen>
-      <Maps ref={mapRef}>
-        <ButtonWrapper>
-          <Button onClick={onClickAdd}>Add</Button>
-          <Button onClick={onClickCurrentPosition}>Current Position</Button>
-        </ButtonWrapper>
-        <Source id="my-data" type="geojson" data={markerDatas}>
+      <Maps ref={mapRef} onClick={onClickMap}>
+        <GeolocateControl
+          position="bottom-left"
+          positionOptions={{
+            enableHighAccuracy: true, // 가장 정확하게 위치를 받기
+          }}
+          trackUserLocation // 실시간 위치 반영
+          showUserHeading // 위쪽에 있는 화살표
+          showUserLocation // 사용자 점 표시
+          showAccuracyCircle={false} // 사용자 주위에 있는 둥근 원 표시
+          onGeolocate={onGeolocate}
+        />
+        {geolocationAvailable ? (
+          <ButtonWrapper>
+            <Button onClick={onClickAdd}>Add</Button>
+          </ButtonWrapper>
+        ) : (
+          ''
+        )}
+        <Source
+          id="datas"
+          type="geojson"
+          cluster={true}
+          clusterMaxZoom={14}
+          clusterRadius={50}
+          data={datas}
+        >
           <Layer {...layerStyle} />
         </Source>
       </Maps>
@@ -105,10 +145,10 @@ const ButtonWrapper = styled.div`
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: flex-end;
+  justify-content: flex-start;
 `;
 const Button = styled.button`
-  z-index: 1; // 버튼 띄우기
+  z-index: 1;
   margin: 15px;
 `;
 

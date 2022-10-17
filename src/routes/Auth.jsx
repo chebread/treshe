@@ -1,5 +1,4 @@
 import googleAuth from 'components/googleAuth';
-import pushPosData from 'components/pushPosData';
 
 const Auth = () => {
   const onClickLogin = async () => {

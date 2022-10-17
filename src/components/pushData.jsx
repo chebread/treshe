@@ -1,7 +1,7 @@
 import { db, setDoc, doc } from 'components/firestore';
 import hashConstructor from 'components/hashConstructor';
 
-const pushPosData = async ({ position, userData }) => {
+const pushData = async ({ position, userData }) => {
   const userId = userData.userId;
   const username = userData.username;
   const { lng, lat } = position;
@@ -11,6 +11,7 @@ const pushPosData = async ({ position, userData }) => {
     geojson: {
       type: 'Feature',
       properties: {
+        markerId: docId, // 현재 마커에 대한 문서 아이디임
         userId: userId,
         username: username,
       },
@@ -22,4 +23,4 @@ const pushPosData = async ({ position, userData }) => {
   });
 };
 
-export default pushPosData;
+export default pushData;

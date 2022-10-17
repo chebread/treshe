@@ -9,6 +9,7 @@ import {
   query,
   where,
   getDocs,
+  onSnapshot,
 } from 'firebase/firestore';
 // Initialize Firebase
 
@@ -25,4 +26,5 @@ export {
   query,
   where,
   getDocs,
+  onSnapshot,
 };

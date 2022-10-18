@@ -1,14 +1,14 @@
-import Router from 'components/Router';
 import { useEffect, useState } from 'react';
-import { auth, onAuthStateChanged } from 'components/auth';
+import Router from 'components/Router';
 import Auth from 'routes/Auth';
+import { auth, onAuthStateChanged } from 'components/auth';
 import { userDataState } from 'components/state';
 import { useSetRecoilState } from 'recoil';
 
 const App = () => {
   const isGeolocation = 'geolocation' in navigator;
-  const [init, setInit] = useState(false); // default : false
-  const [isLoggedIn, setIsLoggedIn] = useState(false); // default : false
+  const [init, setInit] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const setUserData = useSetRecoilState(userDataState);
 
   useEffect(() => {
@@ -20,7 +20,7 @@ const App = () => {
         setUserData({
           userId,
           username,
-        }); // 이거때문에 오류 발생함
+        }); // 저장할 정보만 저장한다
         setIsLoggedIn(true);
       } else {
         setIsLoggedIn(false);
@@ -32,10 +32,8 @@ const App = () => {
   return isGeolocation ? (
     init ? (
       isLoggedIn ? (
-        // 로그인 되어 있다면 라우터 컴포넌트 실행
         <Router />
       ) : (
-        // 비로그인시 로그인 컴포넌트 실행
         <Auth />
       )
     ) : (

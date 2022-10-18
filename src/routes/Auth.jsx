@@ -2,7 +2,7 @@ import googleAuth from 'components/googleAuth';
 
 const Auth = () => {
   const onClickLogin = async () => {
-    googleAuth();
+    await googleAuth();
   };
   return (
     <div>

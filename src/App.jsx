@@ -44,7 +44,6 @@ const App = () => {
   ) : (
     <div>you are not using service</div>
   );
-  return <Router />;
 };
 
 export default App;

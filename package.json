@@ -8,8 +8,6 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.2.3",
-    "react-geolocated": "^4.0.3",
-    "react-hook-geolocation": "^1.1.0",
     "react-hot-toast": "^2.4.0",
     "react-map-gl": "^7.0.19",
     "react-refresh": "^0.14.0",

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { useMap, Source, Layer, Marker, GeolocateControl } from 'react-map-gl';
+import { useMap, Source, Layer, GeolocateControl } from 'react-map-gl';
 import { useRecoilValue } from 'recoil';
 import { userDataState } from 'components/state';
 import Maps from 'components/Maps';
 import pushData from 'components/pushData';
 import toast from 'react-hot-toast';
 import { db, collection, query, onSnapshot } from 'components/firestore';
+import { clusterLayer, unclusteredLayer } from 'components/layers';
 
 const Home = () => {
   const mapRef = useMap();
@@ -16,15 +17,9 @@ const Home = () => {
     lat: null,
   });
   const [geolocationAvailable, setGeolocationAvailable] = useState(false);
+  const [datasAvailable, setDatasAvailable] = useState(false);
   const [datas, setDatas] = useState({}); // 로드한 위치 정보를 답는 geojson 저장소이다
-  const layerStyle = {
-    id: 'point',
-    type: 'circle',
-    paint: {
-      'circle-radius': 10,
-      'circle-color': '#007cbf',
-    },
-  };
+  const [markerToggle, setMarkerToggle] = useState(false);
 
   useEffect(() => {
     // 위치정보를 db에서 실시간으로 받아서 지도에 변동시나 처음에 로드한다
@@ -40,30 +35,16 @@ const Home = () => {
         datas.map(a => {
           sortDatas.push(a.geojson);
         });
-        console.log('set datas');
         setDatas({
           type: 'FeatureCollection',
           features: [...sortDatas],
         });
+        setDatasAvailable(true);
       });
     };
     markDatas();
   }, []);
-  const onClickMap = e => {
-    // const feature = e.features[0];
-    // const clusterId = feature.properties.cluster_id;
-    // const mapboxSource = mapRef.current.getSource('datas');
-    // mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
-    //   if (err) {
-    //     return;
-    //   }
-    //   mapRef.current.flyTo({
-    //     center: feature.geometry.coordinates,
-    //     zoom,
-    //     duration: 500,
-    //   });
-    // });
-  };
+
   const onGeolocate = geolocation => {
     const {
       coords: { longitude, latitude },
@@ -72,9 +53,10 @@ const Home = () => {
       lng: longitude,
       lat: latitude,
     };
+    // 위치 변동시 현재위치를 재정의함
     setCurrentPosition({
       ...newCurrentPosition,
-    }); // 위치 변동시 현재위치를 재정의함
+    });
     if (!geolocationAvailable) {
       // 위치를 사용할 수 있음을 전달함
       setGeolocationAvailable(true);
@@ -90,10 +72,41 @@ const Home = () => {
     await pushData({ position, userData });
     toast.success('Current location added');
   };
+  const onClickMap = e => {
+    // 마커 클릭시 수행될 로직들!
+    const feature = e.features[0];
+    if (feature) {
+      console.log(feature); // 여기에 내가 저장한 geojson 데이터 모두 있닿ㅎㅎ
+      // 마커 클릭시 포커스 됨!
+      const geolocation = feature.geometry.coordinates;
+      mapRef.current.flyTo({
+        center: geolocation,
+        zoom: 15,
+        duration: 2000,
+      });
+      setMarkerToggle(true); // 모달 띄운다
+      // 마커 클릭시 포커스 된 후 모달이 띄워짐
+    }
+  };
+  const onClickBack = () => {
+    setMarkerToggle(false);
+  };
   return (
-    // (5): 또한, geolocation 기능은 내가 ref를 어떻게 고치든가 아니면 그냥 기존에꺼를 쓰되, 디자인을 수정하기.
     <FullScreen>
-      <Maps ref={mapRef} onClick={onClickMap}>
+      {markerToggle ? (
+        <ModalWrapper>
+          <Modal>
+            <button onClick={onClickBack}>back to home</button>
+          </Modal>
+        </ModalWrapper>
+      ) : (
+        ''
+      )}
+      <Maps
+        ref={mapRef}
+        interactiveLayerIds={[unclusteredLayer.id]}
+        onClick={onClickMap}
+      >
         <GeolocateControl
           position="bottom-left"
           positionOptions={{
@@ -104,7 +117,9 @@ const Home = () => {
           showUserLocation // 사용자 점 표시
           showAccuracyCircle={false} // 사용자 주위에 있는 둥근 원 표시
           onGeolocate={onGeolocate}
-        />
+        >
+          plus
+        </GeolocateControl>
         {geolocationAvailable ? (
           <ButtonWrapper>
             <Button onClick={onClickAdd}>Add</Button>
@@ -112,20 +127,39 @@ const Home = () => {
         ) : (
           ''
         )}
-        <Source
-          id="datas"
-          type="geojson"
-          cluster={true}
-          clusterMaxZoom={14}
-          clusterRadius={50}
-          data={datas}
-        >
-          <Layer {...layerStyle} />
-        </Source>
+        {datasAvailable ? (
+          <Source
+            id="datas"
+            type="geojson"
+            data={datas}
+            cluster={true}
+            clusterMaxZoom={14}
+            clusterRadius={50}
+          >
+            <Layer {...clusterLayer} />
+            <Layer {...unclusteredLayer} />
+          </Source>
+        ) : (
+          ''
+        )}
       </Maps>
     </FullScreen>
   );
 };
+const ModalWrapper = styled.div`
+  position: absolute;
+  height: 100%;
+  width: 100%;
+  z-index: 10000;
+`;
+const Modal = styled.div`
+  z-index: 10000;
+  height: calc(100% - 30px);
+  width: calc(100% - 30px);
+  background-color: white;
+  opacity: 0.7;
+  margin: 15px;
+`;
 const FullScreen = styled.div`
   position: relative;
   height: 100%;
@@ -137,6 +171,24 @@ const FullScreen = styled.div`
   // mapbox copyright 로고 지우기
   .mapboxgl-ctrl-attrib {
     display: none;
+  }
+  // control css 초기화하기
+  .mapboxgl-ctrl-bottom-left {
+    /* background-color: seagreen; */
+  }
+  .mapboxgl-ctrl {
+    margin-left: 15px;
+    margin-bottom: 15px;
+    border-radius: 50%;
+  }
+  // btn
+  .mapboxgl-ctrl-geolocate {
+    height: 50px;
+    width: 50px;
+  }
+  // svg
+  .mapboxgl-ctrl-icon {
+    background-color: white;
   }
 `;
 const ButtonWrapper = styled.div`

@@ -28,7 +28,7 @@ const App = () => {
       setInit(true);
     });
   }, []);
-
+  return <Router />;
   return isGeolocation ? (
     init ? (
       isLoggedIn ? (

@@ -1,32 +1,37 @@
-import { useState, useEffect } from 'react';
-import { useMap, Source, Layer, GeolocateControl } from 'react-map-gl';
-import { db, collection, query, onSnapshot } from 'components/firestore';
-import { clusterLayer, unclusteredLayer } from 'components/layers';
+import flyTo from 'components/flyTo';
+import Maps from 'components/Maps';
+import { useEffect, useMemo, useState } from 'react';
+import useGeolocation from 'react-hook-geolocation';
+import { useMap, Marker, Source, Layer } from 'react-map-gl';
+import styled from 'styled-components';
 import { useRecoilValue } from 'recoil';
 import { userDataState } from 'components/state';
-import pushData from 'components/pushData';
 import toast from 'react-hot-toast';
-import styled from 'styled-components';
-import Maps from 'components/Maps';
+import pushData from 'components/pushData';
+import { clusterLayer, unclusteredLayer } from 'components/layers';
+import { db, collection, query, onSnapshot } from 'components/firestore';
 import ModalWindow from 'components/ModalWindow';
 
 const Home = () => {
   const mapRef = useMap();
-  const userData = useRecoilValue(userDataState); // 로그인된 유저 데이터
-  const [currentPosition, setCurrentPosition] = useState({
+  const geolocation = useGeolocation();
+  const [cp, setCp] = useState({
+    // current position
     lng: null,
     lat: null,
-  }); // 현 위치 저장소
-  const [datas, setDatas] = useState({}); // 표시 마커 및 청소 마커를 담는 곳
-  const [clickedMarkerData, setClickedMarkerData] = useState({}); // 클릭된 마커의 데이터를 담는 곳
-  const [clickedMarkerToggle, setClickedMarkerToggle] = useState(false); // 클릭 토글
-  const [isGeolocation, setIsGeolocation] = useState(false); // 위치 정보 사용 가능
-  const [isDatas, setIsDatas] = useState(false); // 표시 마커 사용 가능
+  });
+  const [isGeolocationAvailable, setIsGeolocationAvailable] = useState(false);
+  const userData = useRecoilValue(userDataState);
+  const [datas, setDatas] = useState({}); // 변동이 없을시 다시 불러오지 않기
+  const [isDatas, setIsDatas] = useState(false);
+  const [isFocusing, setIsFocusing] = useState(false);
+  const [data, setData] = useState({}); // 데이터 마커의 데이터임
+  const [isClickedDataMarker, setIsClickedDataMarker] = useState(false);
 
   useEffect(() => {
     // 표시 마커 및 청소 마커 표시함
     const markDatas = async () => {
-      // 여기서 isCleaned를 기준으로 이것은 따로 보류한후에 따로 로드하기!
+      // (2): *여기서 isCleaned를 기준으로 이것은 따로 보류한후에 따로 로드하기!
       const q = query(collection(db, 'markers'));
       onSnapshot(q, querySnapshot => {
         const datas = []; // [{ geojson: { ... }}, { geojson: { .... }}]
@@ -35,7 +40,7 @@ const Home = () => {
         });
         const sortedDatas = [];
         datas.map(a => {
-          sortedDatas.push(a.geojson);
+          sortedDatas.push(a);
         });
         setDatas({
           type: 'FeatureCollection',
@@ -46,122 +51,135 @@ const Home = () => {
     };
     markDatas();
   }, []);
-
-  // 위치가 변하면 작동하는 함수
-  const onGeolocate = geolocation => {
-    const {
-      coords: { longitude, latitude },
-    } = geolocation;
-    const newCurrentPosition = {
-      lng: longitude,
-      lat: latitude,
-    };
-    // 위치 변동시 현재위치를 재저장함
-    setCurrentPosition({
-      ...newCurrentPosition,
-    });
-    if (!isGeolocation) {
-      // 위치를 사용할 수 있음을 전달함
-      setIsGeolocation(true);
+  useEffect(() => {
+    const { longitude, latitude } = geolocation;
+    const { lng, lat } = cp;
+    const isDifferent = longitude != lng && latitude != lat; // 변경된 위치인지 구하는 변수
+    if (isDifferent) {
+      // 위치가 변동할때만 현재위치를 재정의함
+      const newCurrentPosition = {
+        lng: longitude,
+        lat: latitude,
+      };
+      setCp({
+        ...newCurrentPosition,
+      });
+      if (!isGeolocationAvailable) {
+        setIsGeolocationAvailable(true);
+      }
+      // 여기에 포커스 하기 추가하기!!! (왜냐하면 여기가 실시간 반영되는 구간이기에!!)a
+      if (isFocusing && mapRef.current != undefined) {
+        flyTo({ ref: mapRef, lat: latitude, lng: longitude });
+      }
     }
+  }, [geolocation]);
+  const onClickFocusCp = () => {
+    // (1): 현재는 한번 포커싱 기능 활성화시 계속해서 활성화되게 됨!! 이것을 활성화 한후 지도에 *마우스 클릭이나 터치 이벤트 발생시 위치 포커싱 없에는 기능 추가하기*
+    if (!isFocusing) {
+      setIsFocusing(true);
+      const { lng, lat } = cp;
+      flyTo({ ref: mapRef, lng: lng, lat: lat });
+    } else setIsFocusing(false);
   };
-  // 사용자의 현재위치를 db에 저장한다
   const onClickAdd = async () => {
-    const { lng, lat } = currentPosition;
+    const { lng, lat } = cp;
     const position = {
       lng: lng,
       lat: lat,
     };
-    await pushData({ position, userData });
-    toast.success('Current location added');
+    await pushData({ position, userData })
+      .then(() => {
+        toast.success('Your current location has been uploaded');
+      })
+      .catch(err => {
+        toast.error('Failed to upload current location');
+      });
   };
-  const flyTo = ({ lng, lat }) => {
-    mapRef.current.flyTo({
-      center: [lng, lat],
-      zoom: 15,
-      duration: 500,
-    });
-  };
-  // 마커 클릭시 수행될 로직들
-  const onClickMap = e => {
-    // 마커 클릭시 수행될 로직들!
+  const onClickDataMarker = e => {
     const feature = e.features[0];
     if (feature) {
-      const geolocation = feature.geometry.coordinates;
-      const lng = geolocation[0];
-      const lat = geolocation[1];
-      flyTo({ lng: lng, lat: lat });
       const {
-        properties: { markerId }, // 표시자 및 청소자 이름 및 청소됨을 알리는 값
+        properties: { markerId, lat, lng }, // 표시자 및 청소자 이름 및 청소됨을 알리는 값
       } = feature;
-      setClickedMarkerData({
+      flyTo({ ref: mapRef, lng: lng, lat: lat }); // db에 저장된 정확한 정보로 flyTo해아함
+      setData({
         markerId: markerId,
       });
-      setClickedMarkerToggle(true); // 모달 띄운다
+      setIsClickedDataMarker(true);
+      console.log(feature);
     }
   };
   const onClickBack = () => {
-    setClickedMarkerToggle(false);
-    setClickedMarkerData({});
+    setIsClickedDataMarker(false);
+    setData({});
   };
   const onClickCleanUp = () => {
-    // cleaner 데이터 및 isCleaned 를 true로 바꾸기
-    console.log(clickedMarkerData);
+    // (0): cleaner 데이터 및 isCleaned 를 true로 바꾸기
+    console.log(data);
   };
-
+  const onMapLoad = () => {
+    // 맵이 최초로 불러와지면 위치에 포커스함!
+    const { lng, lat } = cp;
+    flyTo({ ref: mapRef, lng: lng, lat: lat });
+  };
   return (
     <FullScreen>
-      {clickedMarkerToggle ? (
-        <ModalWindow
-          onClickCleanUp={onClickCleanUp}
-          onClickBack={onClickBack}
-        />
-      ) : (
-        ''
-      )}
-      <Maps
-        ref={mapRef}
-        interactiveLayerIds={[unclusteredLayer.id]}
-        onClick={onClickMap}
-      >
-        {isDatas ? (
-          <Source
-            id="datas"
-            type="geojson"
-            data={datas}
-            cluster={true}
-            clusterMaxZoom={14}
-            clusterRadius={50}
+      {isGeolocationAvailable ? (
+        // 여기는 기본 조건이 일단은 현재 위치를 받을 수 있는 곳임!
+        isClickedDataMarker ? (
+          <ModalWrapper>
+            <Modal>
+              <ButtonWrapper>
+                <Button onClick={onClickBack}>Back</Button>
+                <Button onClick={onClickCleanUp}>Clean up</Button>
+              </ButtonWrapper>
+            </Modal>
+          </ModalWrapper>
+        ) : (
+          <Maps
+            ref={mapRef}
+            interactiveLayerIds={[unclusteredLayer.id]}
+            onClick={onClickDataMarker}
+            onLoad={onMapLoad}
           >
-            <Layer {...clusterLayer} />
-            <Layer {...unclusteredLayer} />
-          </Source>
-        ) : (
-          ''
-        )}
-        <GeolocateControl
-          position="bottom-left"
-          positionOptions={{
-            enableHighAccuracy: true, // 가장 정확하게 위치를 받기
-          }}
-          trackUserLocation // 실시간 위치 반영
-          showUserHeading // 위쪽에 있는 화살표
-          showUserLocation // 사용자 점 표시
-          showAccuracyCircle={false} // 사용자 주위에 있는 둥근 원 표시
-          onGeolocate={onGeolocate}
-        ></GeolocateControl>
-        {isGeolocation ? (
-          <ButtonWrapper>
-            <Button onClick={onClickAdd}>Add</Button>
-          </ButtonWrapper>
-        ) : (
-          ''
-        )}
-      </Maps>
+            <MarkerWrapper>
+              <Marker
+                // 현위치 마커
+                latitude={cp.lat}
+                longitude={cp.lng}
+              />
+            </MarkerWrapper>
+            <ButtonWrapper>
+              <Button onClick={onClickAdd}>Add</Button>
+              <Button onClick={onClickFocusCp}>Cp</Button>
+            </ButtonWrapper>
+            {isDatas ? (
+              // 데이터가 불러와지면 데이터 마커를 표시함
+              // 여기에 생성된 마커를 데이터 마커라고 칭함
+              <SourceWrapper>
+                <Source
+                  id="datas"
+                  type="geojson"
+                  data={datas}
+                  cluster={true}
+                  clusterMaxZoom={14}
+                  clusterRadius={50}
+                >
+                  <Layer {...clusterLayer} />
+                  <Layer {...unclusteredLayer} />
+                </Source>
+              </SourceWrapper>
+            ) : (
+              ''
+            )}
+          </Maps>
+        )
+      ) : (
+        <div>loading...</div>
+      )}
     </FullScreen>
   );
 };
-
 const FullScreen = styled.div`
   position: relative;
   height: 100%;
@@ -174,34 +192,31 @@ const FullScreen = styled.div`
   .mapboxgl-ctrl-attrib {
     display: none;
   }
-  // control css 초기화하기
-  .mapboxgl-ctrl-bottom-left {
-    /* background-color: seagreen; */
-  }
-  .mapboxgl-ctrl {
-    margin-left: 15px;
-    margin-bottom: 15px;
-    border-radius: 50%;
-  }
-  .mapboxgl-ctrl-geolocate {
-    height: 50px;
-    width: 50px;
-  }
-  .mapboxgl-ctrl-icon {
-    background-color: white;
-  }
 `;
+const MarkerWrapper = styled.div``;
 const ButtonWrapper = styled.div`
   height: 100%;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: flex-start;
+  justify-content: flex-end;
 `;
 const Button = styled.button`
   z-index: 1;
   margin: 15px;
+`;
+const SourceWrapper = styled.div``;
+const ModalWrapper = styled.div`
+  position: absolute;
+  height: 100%;
+  width: 100%;
+  z-index: 10000;
+`;
+const Modal = styled.div`
+  height: 100%;
+  width: 100%;
+  background-color: white;
 `;
 
 export default Home;

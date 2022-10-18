@@ -10,7 +10,6 @@ import toast from 'react-hot-toast';
 import pushData from 'components/pushData';
 import { clusterLayer, unclusteredLayer } from 'components/layers';
 import { db, collection, query, onSnapshot } from 'components/firestore';
-import ModalWindow from 'components/ModalWindow';
 
 const Home = () => {
   const mapRef = useMap();
@@ -24,9 +23,9 @@ const Home = () => {
   const userData = useRecoilValue(userDataState);
   const [datas, setDatas] = useState({}); // 변동이 없을시 다시 불러오지 않기
   const [isDatas, setIsDatas] = useState(false);
-  const [isFocusing, setIsFocusing] = useState(false);
   const [data, setData] = useState({}); // 데이터 마커의 데이터임
   const [isClickedDataMarker, setIsClickedDataMarker] = useState(false);
+  const [isMapLoad, setIsMapLoad] = useState(false);
 
   useEffect(() => {
     // 표시 마커 및 청소 마커 표시함
@@ -67,21 +66,25 @@ const Home = () => {
       if (!isGeolocationAvailable) {
         setIsGeolocationAvailable(true);
       }
-      // 여기에 포커스 하기 추가하기!!! (왜냐하면 여기가 실시간 반영되는 구간이기에!!)a
-      if (isFocusing && mapRef.current != undefined) {
-        flyTo({ ref: mapRef, lat: latitude, lng: longitude });
+      if (isMapLoad) {
+        console.log('자동으로 포커싱');
+        flyTo({ ref: mapRef, lng: longitude, lat: latitude });
       }
     }
   }, [geolocation]);
+  const onMapLoad = () => {
+    // 맵이 최초로 불러와지면 위치에 포커스함!
+    const { lng, lat } = cp;
+    flyTo({ ref: mapRef, lng: lng, lat: lat });
+    setIsMapLoad(true); // 맵 로드됨
+  };
   const onClickFocusCp = () => {
-    // (1): 현재는 한번 포커싱 기능 활성화시 계속해서 활성화되게 됨!! 이것을 활성화 한후 지도에 *마우스 클릭이나 터치 이벤트 발생시 위치 포커싱 없에는 기능 추가하기*
-    if (!isFocusing) {
-      setIsFocusing(true);
-      const { lng, lat } = cp;
-      flyTo({ ref: mapRef, lng: lng, lat: lat });
-    } else setIsFocusing(false);
+    // (1): 자동 추적을 비활성화 할 수 있는 기능 추가하기!
+    const { lng, lat } = cp;
+    flyTo({ ref: mapRef, lng: lng, lat: lat });
   };
   const onClickAdd = async () => {
+    // 현재 위치 데이터 추가
     const { lng, lat } = cp;
     const position = {
       lng: lng,
@@ -97,7 +100,9 @@ const Home = () => {
   };
   const onClickDataMarker = e => {
     const feature = e.features[0];
-    if (feature) {
+    const id = feature.layer.id;
+    if (id === 'data') {
+      // 마커 클릭시
       const {
         properties: { markerId, lat, lng }, // 표시자 및 청소자 이름 및 청소됨을 알리는 값
       } = feature;
@@ -108,7 +113,25 @@ const Home = () => {
       setIsClickedDataMarker(true);
       console.log(feature);
     }
+    if (id === 'clusters') {
+      // 클러스터 클릭시
+      const mapboxSource = mapRef.current.getSource('datas');
+      const clusterId = feature.properties.cluster_id;
+      mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
+        if (err) {
+          return;
+        }
+        const lng = feature.geometry.coordinates[0];
+        const lat = feature.geometry.coordinates[1];
+        mapRef.current.flyTo({
+          center: [lng, lat],
+          zoom,
+          duration: 1000,
+        });
+      });
+    }
   };
+
   const onClickBack = () => {
     setIsClickedDataMarker(false);
     setData({});
@@ -117,15 +140,10 @@ const Home = () => {
     // (0): cleaner 데이터 및 isCleaned 를 true로 바꾸기
     console.log(data);
   };
-  const onMapLoad = () => {
-    // 맵이 최초로 불러와지면 위치에 포커스함!
-    const { lng, lat } = cp;
-    flyTo({ ref: mapRef, lng: lng, lat: lat });
-  };
   return (
     <FullScreen>
       {isGeolocationAvailable ? (
-        // 여기는 기본 조건이 일단은 현재 위치를 받을 수 있는 곳임!
+        // 여기에 오는 모든 것은 현재 위치를 받을 수 있는 곳임!
         isClickedDataMarker ? (
           <ModalWrapper>
             <Modal>
@@ -138,7 +156,7 @@ const Home = () => {
         ) : (
           <Maps
             ref={mapRef}
-            interactiveLayerIds={[unclusteredLayer.id]}
+            interactiveLayerIds={[unclusteredLayer.id, clusterLayer.id]}
             onClick={onClickDataMarker}
             onLoad={onMapLoad}
           >
@@ -154,7 +172,6 @@ const Home = () => {
               <Button onClick={onClickFocusCp}>Cp</Button>
             </ButtonWrapper>
             {isDatas ? (
-              // 데이터가 불러와지면 데이터 마커를 표시함
               // 여기에 생성된 마커를 데이터 마커라고 칭함
               <SourceWrapper>
                 <Source

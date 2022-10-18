@@ -1,6 +1,6 @@
 import flyTo from 'components/flyTo';
 import Maps from 'components/Maps';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import useGeolocation from 'react-hook-geolocation';
 import { useMap, Marker, Source, Layer } from 'react-map-gl';
 import styled from 'styled-components';
@@ -72,12 +72,14 @@ const Home = () => {
       }
     }
   }, [geolocation]);
+
   const onMapLoad = () => {
     // 맵이 최초로 불러와지면 위치에 포커스함!
     const { lng, lat } = cp;
     flyTo({ ref: mapRef, lng: lng, lat: lat });
     setIsMapLoad(true); // 맵 로드됨
   };
+
   const onClickFocusCp = () => {
     // (1): 자동 추적을 비활성화 할 수 있는 기능 추가하기!
     const { lng, lat } = cp;
@@ -98,6 +100,7 @@ const Home = () => {
         toast.error('Failed to upload current location');
       });
   };
+
   const onClickDataMarker = e => {
     const feature = e.features[0];
     const id = feature.layer.id;
@@ -131,15 +134,15 @@ const Home = () => {
       });
     }
   };
-
   const onClickBack = () => {
     setIsClickedDataMarker(false);
     setData({});
   };
   const onClickCleanUp = () => {
-    // (0): cleaner 데이터 및 isCleaned 를 true로 바꾸기
+    // (2): cleaner 데이터 및 isCleaned 를 true로 바꾸기
     console.log(data);
   };
+
   return (
     <FullScreen>
       {isGeolocationAvailable ? (

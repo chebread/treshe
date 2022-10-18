@@ -16,7 +16,6 @@ const App = () => {
       if (user) {
         const userId = user.uid;
         const username = user.displayName;
-        console.log(user);
         setUserData({
           userId,
           username,

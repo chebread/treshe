@@ -10,10 +10,9 @@ import {
   where,
   getDocs,
   onSnapshot,
+  updateDoc,
 } from 'firebase/firestore';
-// Initialize Firebase
 
-// Initialize Cloud Storage and get a reference to the service
 const db = getFirestore(firebase);
 
 export {
@@ -27,4 +26,5 @@ export {
   where,
   getDocs,
   onSnapshot,
+  updateDoc,
 };

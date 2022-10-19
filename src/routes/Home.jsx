@@ -8,8 +8,8 @@ import { useRecoilValue } from 'recoil';
 import { userDataState } from 'components/state';
 import toast from 'react-hot-toast';
 import pushData from 'components/pushData';
-import { clusterLayer, unclusteredLayer } from 'components/layers';
 import { db, collection, query, onSnapshot } from 'components/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 
 const Home = () => {
   const mapRef = useMap();
@@ -21,11 +21,79 @@ const Home = () => {
   });
   const [isGeolocationAvailable, setIsGeolocationAvailable] = useState(false);
   const userData = useRecoilValue(userDataState);
-  const [datas, setDatas] = useState({}); // 변동이 없을시 다시 불러오지 않기
+  const [indicatorDatas, setIndicatorDatas] = useState({}); // 표시된 마커
+  const [cleanerDatas, setCleanerDatas] = useState({}); // 청소된 마커
   const [isDatas, setIsDatas] = useState(false);
-  const [data, setData] = useState({}); // 데이터 마커의 데이터임
-  const [isClickedDataMarker, setIsClickedDataMarker] = useState(false);
   const [isMapLoad, setIsMapLoad] = useState(false);
+  const [isClickedMarker, setIsClickedMarker] = useState(false);
+  const [isClickedIndicatorMarker, setIsClickedIndicatorMarker] =
+    useState(false);
+  const [indicatorData, setIndicatorData] = useState({}); // 클릭된 표시 마커의 데이터
+  const [isClickedCleanerMarker, setIsClickedCleanerMarker] = useState(false); // 표시 마커가 클릭 됬는가
+  const [cleanerData, setCleanerData] = useState({});
+  const [isFocusing, setIsFocusing] = useState(true);
+
+  const indicatorClusterLayer = {
+    id: 'indicatorCluster',
+    type: 'circle',
+    source: 'indicatorDatas',
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': [
+        'step',
+        ['get', 'point_count'],
+        '#51bbd6',
+        100,
+        '#f1f075',
+        750,
+        '#f28cb1',
+      ],
+      'circle-radius': ['step', ['get', 'point_count'], 15, 100, 30, 750, 40],
+      'circle-opacity': 0.7,
+    },
+  };
+  const indicatorUnclusteredLayer = {
+    id: 'indicatorData',
+    source: 'indicatorDatas',
+    type: 'circle',
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-radius': 10,
+      'circle-opacity': 0.7,
+      'circle-color': '#20c997',
+    },
+  };
+
+  const cleanerClusterLayer = {
+    id: 'cleanerCluster',
+    type: 'circle',
+    source: 'cleanerDatas',
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': [
+        'step',
+        ['get', 'point_count'],
+        '#eebefa',
+        100,
+        '#f1f075',
+        750,
+        '#f28cb1',
+      ],
+      'circle-radius': ['step', ['get', 'point_count'], 15, 100, 30, 750, 40],
+      'circle-opacity': 0.7,
+    },
+  };
+  const cleanerUnclusteredLayer = {
+    id: 'cleanerData',
+    source: 'cleanerDatas',
+    type: 'circle',
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-radius': 10,
+      'circle-opacity': 0.7,
+      'circle-color': '#d6336c',
+    },
+  };
 
   useEffect(() => {
     // 표시 마커 및 청소 마커 표시함
@@ -37,15 +105,28 @@ const Home = () => {
         querySnapshot.forEach(doc => {
           datas.push(doc.data());
         });
-        const sortedDatas = [];
+        const indicatorDatas = [];
+        const cleanerDatas = [];
         datas.map(a => {
-          sortedDatas.push(a);
+          const isCleaned = a.properties.isCleaned;
+          if (isCleaned) {
+            // 청소 마커
+            cleanerDatas.push(a);
+          } else {
+            // 표시 마커
+            indicatorDatas.push(a);
+          }
         });
-        setDatas({
+        console.log(indicatorDatas, cleanerDatas);
+        setIndicatorDatas({
           type: 'FeatureCollection',
-          features: [...sortedDatas],
+          features: [...indicatorDatas],
         });
-        setIsDatas(true);
+        setCleanerDatas({
+          type: 'FeatureCollection',
+          features: [...cleanerDatas],
+        });
+        setIsDatas(true); // 데이터가 불러와짐!
       });
     };
     markDatas();
@@ -68,7 +149,10 @@ const Home = () => {
       }
       if (isMapLoad) {
         console.log('자동으로 포커싱');
-        flyTo({ ref: mapRef, lng: longitude, lat: latitude });
+        if (isFocusing) {
+          // 포커싱이 켜져 있어야 자동 포커싱 기능이 활성화됨!
+          flyTo({ ref: mapRef, lng: longitude, lat: latitude });
+        }
       }
     }
   }, [geolocation]);
@@ -82,8 +166,15 @@ const Home = () => {
 
   const onClickFocusCp = () => {
     // (1): 자동 추적을 비활성화 할 수 있는 기능 추가하기!
-    const { lng, lat } = cp;
-    flyTo({ ref: mapRef, lng: lng, lat: lat });
+    if (isFocusing) {
+      console.log('포커싱 취소');
+      setIsFocusing(false);
+    } else {
+      console.log('포커싱 활성화');
+      const { lng, lat } = cp;
+      flyTo({ ref: mapRef, lng: lng, lat: lat });
+      setIsFocusing(true);
+    }
   };
   const onClickAdd = async () => {
     // 현재 위치 데이터 추가
@@ -101,66 +192,162 @@ const Home = () => {
       });
   };
 
-  const onClickDataMarker = e => {
+  const onClickMarker = e => {
     const feature = e.features[0];
-    const id = feature.layer.id;
-    if (id === 'data') {
-      // 마커 클릭시
-      const {
-        properties: { markerId, lat, lng }, // 표시자 및 청소자 이름 및 청소됨을 알리는 값
-      } = feature;
-      flyTo({ ref: mapRef, lng: lng, lat: lat }); // db에 저장된 정확한 정보로 flyTo해아함
-      setData({
-        markerId: markerId,
-      });
-      setIsClickedDataMarker(true);
-      console.log(feature);
-    }
-    if (id === 'clusters') {
-      // 클러스터 클릭시
-      const mapboxSource = mapRef.current.getSource('datas');
-      const clusterId = feature.properties.cluster_id;
-      mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
-        if (err) {
-          return;
-        }
-        const lng = feature.geometry.coordinates[0];
-        const lat = feature.geometry.coordinates[1];
-        mapRef.current.flyTo({
-          center: [lng, lat],
-          zoom,
-          duration: 1000,
+    // 표시자
+    if (feature) {
+      const id = feature.layer.id;
+      if (id === 'indicatorData') {
+        const {
+          properties: { markerId, lat, lng, indicatorId, indicatorName }, // 표시자 및 청소자 이름 및 청소됨을 알리는 값
+        } = feature;
+        flyTo({ ref: mapRef, lng: lng, lat: lat }); // db에 저장된 정확한 정보로 flyTo해아함
+        setIndicatorData({
+          markerId: markerId,
+          lat: lat,
+          lng: lng,
+          indicatorId: indicatorId,
+          indicatorName: indicatorName,
         });
-      });
+        setIsClickedIndicatorMarker(true);
+        setIsClickedMarker(true);
+      }
+      if (id === 'indicatorCluster') {
+        const mapboxSource = mapRef.current.getSource('indicatorDatas');
+        const clusterId = feature.properties.cluster_id;
+        mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err) {
+            return;
+          }
+          const lng = feature.geometry.coordinates[0];
+          const lat = feature.geometry.coordinates[1];
+          mapRef.current.flyTo({
+            center: [lng, lat],
+            zoom,
+            duration: 1000,
+          });
+        });
+      }
+      if (id === 'cleanerData') {
+        const {
+          properties: {
+            markerId,
+            lat,
+            lng,
+            indicatorId,
+            indicatorName,
+            cleanerName,
+            cleanerId,
+          }, // 표시자 및 청소자 이름 및 청소됨을 알리는 값
+        } = feature;
+        flyTo({ ref: mapRef, lng: lng, lat: lat }); // db에 저장된 정확한 정보로 flyTo해아함
+        setCleanerData({
+          markerId: markerId,
+          lat: lat,
+          lng: lng,
+          indicatorId: indicatorId,
+          indicatorName: indicatorName,
+          cleanerName: cleanerName,
+          cleanerId: cleanerId,
+        });
+        setIsClickedCleanerMarker(true);
+        setIsClickedMarker(true);
+      }
+      if (id === 'cleanerCluster') {
+        const mapboxSource = mapRef.current.getSource('cleanerDatas');
+        const clusterId = feature.properties.cluster_id;
+        mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err) {
+            return;
+          }
+          const lng = feature.geometry.coordinates[0];
+          const lat = feature.geometry.coordinates[1];
+          mapRef.current.flyTo({
+            center: [lng, lat],
+            zoom,
+            duration: 1000,
+          });
+        });
+      }
     }
   };
-  const onClickBack = () => {
-    setIsClickedDataMarker(false);
-    setData({});
+  const disableIndicatorModal = () => {
+    setIsClickedIndicatorMarker(false);
+    setIsClickedMarker(false);
+    setIndicatorData({});
   };
-  const onClickCleanUp = () => {
+  const onClickIndicatorBack = () => {
+    disableIndicatorModal();
+  };
+  const disableCleanerModal = () => {
+    setIsClickedCleanerMarker(false);
+    setIsClickedMarker(false);
+    setCleanerData({});
+  };
+  const onClickCleanerBack = () => {
+    console.log(cleanerData);
+    disableCleanerModal();
+  };
+  const onClickIndicatorCleanUp = async () => {
     // (2): cleaner 데이터 및 isCleaned 를 true로 바꾸기
-    console.log(data);
+    const { lng, lat, indicatorId, indicatorName, markerId } = indicatorData;
+    const { userId, username } = userData;
+    const markerRef = doc(db, 'markers', markerId);
+    const updataData = {
+      properties: {
+        markerId: markerId, // 현재 마커에 대한 문서 아이디임
+        lng: lng, // 위치 정보 lng
+        lat: lat, // 위치 정보 lat
+        indicatorId: indicatorId, // 표시자 아이디
+        indicatorName: indicatorName, // 표시자 이름
+        cleanerId: userId, // 청소자 아이디
+        cleanerName: username, // 청소자 이름
+        isCleaned: true, // 청소되었는가?
+      },
+    };
+    await updateDoc(markerRef, updataData);
+    toast.success('Clean up!');
+    disableIndicatorModal();
   };
 
   return (
     <FullScreen>
       {isGeolocationAvailable ? (
         // 여기에 오는 모든 것은 현재 위치를 받을 수 있는 곳임!
-        isClickedDataMarker ? (
-          <ModalWrapper>
-            <Modal>
-              <ButtonWrapper>
-                <Button onClick={onClickBack}>Back</Button>
-                <Button onClick={onClickCleanUp}>Clean up</Button>
-              </ButtonWrapper>
-            </Modal>
-          </ModalWrapper>
+        isClickedMarker ? (
+          isClickedIndicatorMarker ? (
+            <ModalWrapper>
+              <Modal>
+                <p>Indicator modal</p>
+                <ButtonWrapper>
+                  <Button onClick={onClickIndicatorBack}>Back</Button>
+                  <Button onClick={onClickIndicatorCleanUp}>Clean up</Button>
+                </ButtonWrapper>
+              </Modal>
+            </ModalWrapper>
+          ) : isClickedCleanerMarker ? (
+            <ModalWrapper>
+              <Modal>
+                <h1>청소자: {cleanerData.cleanerName}</h1>
+                <h1>표시자: {cleanerData.indicatorName}</h1>
+                <ButtonWrapper>
+                  <Button onClick={onClickCleanerBack}>Back</Button>
+                </ButtonWrapper>
+              </Modal>
+            </ModalWrapper>
+          ) : (
+            ''
+          )
         ) : (
           <Maps
             ref={mapRef}
-            interactiveLayerIds={[unclusteredLayer.id, clusterLayer.id]}
-            onClick={onClickDataMarker}
+            interactiveLayerIds={[
+              indicatorClusterLayer.id,
+              indicatorUnclusteredLayer.id,
+              cleanerClusterLayer.id,
+              cleanerUnclusteredLayer.id,
+            ]}
+            onClick={onClickMarker}
             onLoad={onMapLoad}
           >
             <MarkerWrapper>
@@ -172,21 +359,34 @@ const Home = () => {
             </MarkerWrapper>
             <ButtonWrapper>
               <Button onClick={onClickAdd}>Add</Button>
-              <Button onClick={onClickFocusCp}>Cp</Button>
+              <Button onClick={onClickFocusCp}>
+                {isFocusing ? 'Unfocusing' : 'Focsuing'}
+              </Button>
             </ButtonWrapper>
             {isDatas ? (
-              // 여기에 생성된 마커를 데이터 마커라고 칭함
+              // 표시된 마커 및 청소된 마커 표기
               <SourceWrapper>
                 <Source
-                  id="datas"
+                  id="indicatorDatas"
                   type="geojson"
-                  data={datas}
+                  data={indicatorDatas}
                   cluster={true}
                   clusterMaxZoom={14}
                   clusterRadius={50}
                 >
-                  <Layer {...clusterLayer} />
-                  <Layer {...unclusteredLayer} />
+                  <Layer {...indicatorClusterLayer} />
+                  <Layer {...indicatorUnclusteredLayer} />
+                </Source>
+                <Source
+                  id="cleanerDatas"
+                  type="geojson"
+                  data={cleanerDatas}
+                  cluster={true}
+                  clusterMaxZoom={14}
+                  clusterRadius={50}
+                >
+                  <Layer {...cleanerClusterLayer} />
+                  <Layer {...cleanerUnclusteredLayer} />
                 </Source>
               </SourceWrapper>
             ) : (

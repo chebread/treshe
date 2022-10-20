@@ -10,6 +10,11 @@ import toast from 'react-hot-toast';
 import pushData from 'components/pushData';
 import { db, collection, query, onSnapshot } from 'components/firestore';
 import { doc, updateDoc } from 'firebase/firestore';
+import {
+  indicatorClusterLayer,
+  cleanerClusterLayer,
+  indicatorUnclusteredLayer,
+} from 'components/layers';
 
 const Home = () => {
   const mapRef = useMap();
@@ -33,56 +38,6 @@ const Home = () => {
   const [cleanerData, setCleanerData] = useState({});
   const [isFocusing, setIsFocusing] = useState(true);
 
-  const indicatorClusterLayer = {
-    id: 'indicatorCluster',
-    type: 'circle',
-    source: 'indicatorDatas',
-    filter: ['has', 'point_count'],
-    paint: {
-      'circle-color': [
-        'step',
-        ['get', 'point_count'],
-        '#51bbd6',
-        100,
-        '#f1f075',
-        750,
-        '#f28cb1',
-      ],
-      'circle-radius': ['step', ['get', 'point_count'], 15, 100, 30, 750, 40],
-      'circle-opacity': 0.7,
-    },
-  };
-  const indicatorUnclusteredLayer = {
-    id: 'indicatorData',
-    source: 'indicatorDatas',
-    type: 'circle',
-    filter: ['!', ['has', 'point_count']],
-    paint: {
-      'circle-radius': 10,
-      'circle-opacity': 0.7,
-      'circle-color': '#20c997',
-    },
-  };
-
-  const cleanerClusterLayer = {
-    id: 'cleanerCluster',
-    type: 'circle',
-    source: 'cleanerDatas',
-    filter: ['has', 'point_count'],
-    paint: {
-      'circle-color': [
-        'step',
-        ['get', 'point_count'],
-        '#eebefa',
-        100,
-        '#f1f075',
-        750,
-        '#f28cb1',
-      ],
-      'circle-radius': ['step', ['get', 'point_count'], 15, 100, 30, 750, 40],
-      'circle-opacity': 0.7,
-    },
-  };
   const cleanerUnclusteredLayer = {
     id: 'cleanerData',
     source: 'cleanerDatas',
@@ -117,7 +72,6 @@ const Home = () => {
             indicatorDatas.push(a);
           }
         });
-        console.log(indicatorDatas, cleanerDatas);
         setIndicatorDatas({
           type: 'FeatureCollection',
           features: [...indicatorDatas],
@@ -131,6 +85,7 @@ const Home = () => {
     };
     markDatas();
   }, []);
+
   useEffect(() => {
     const { longitude, latitude } = geolocation;
     const { lng, lat } = cp;
@@ -176,6 +131,7 @@ const Home = () => {
       setIsFocusing(true);
     }
   };
+
   const onClickAdd = async () => {
     // 현재 위치 데이터 추가
     const { lng, lat } = cp;
@@ -188,6 +144,7 @@ const Home = () => {
         toast.success('Your current location has been uploaded');
       })
       .catch(err => {
+        console.log(err);
         toast.error('Failed to upload current location');
       });
   };
@@ -288,6 +245,7 @@ const Home = () => {
     console.log(cleanerData);
     disableCleanerModal();
   };
+
   const onClickIndicatorCleanUp = async () => {
     // (2): cleaner 데이터 및 isCleaned 를 true로 바꾸기
     const { lng, lat, indicatorId, indicatorName, markerId } = indicatorData;

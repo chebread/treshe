@@ -53,7 +53,6 @@ const Home = () => {
   useEffect(() => {
     // 표시 마커 및 청소 마커 표시함
     const markDatas = async () => {
-      // (2): *여기서 isCleaned를 기준으로 이것은 따로 보류한후에 따로 로드하기!
       const q = query(collection(db, 'markers'));
       onSnapshot(q, querySnapshot => {
         const datas = []; // [{ geojson: { ... }}, { geojson: { .... }}]
